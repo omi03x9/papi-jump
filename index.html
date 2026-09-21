@@ -253,7 +253,7 @@ function update(dt) {
                 p.count++; // 乗った回数をカウント
 
                 // 5回乗ったら足場が壊れて落ちる
-                if (p.count >= 5) {
+                if (p.count >= getPlatformDurability()) {
                     p.broken = true;
                 }
             }
