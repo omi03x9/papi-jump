@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Papi Jump">
+    <meta name="theme-color" content="#222222">
+    <title>Jump Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #222;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            height: 100dvh;
+            overflow: hidden;
+            padding: env(safe-area-inset-top) env(safe-area-inset-right)
+                     env(safe-area-inset-bottom) env(safe-area-inset-left);
+            box-sizing: border-box;
+            font-family: sans-serif;
+            color: white;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+        canvas {
+            background-color: #111;
+            box-shadow: 0 0 10px rgba(0,255,0,0.3);
+            touch-action: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas" width="360" height="640"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// プレイヤー設定
+const player = {
+    x: canvas.width / 2 - 15,
+    y: canvas.height - 150,
+    width: 30,
+    height: 30,
+    vx: 0,
+    vy: 0,
+    gravity: 0.28,
+    jumpPower: -8.8,
+    accel: 0.7,
+    friction: 0.94,
+    maxVx: 6.5
+};
+
+// 足場設定
+const platforms = [];
+const platformCount = 7;
+const platformWidth = 60;
+const platformHeight = 12;
+const maxPlatformGap = 100; 
+const minPlatformGap = 55;
+
+// ダミーパピー（落下障害物）設定
+const dummy = {
+    x: 0,
+    y: -100,
+    width: 30,
+    height: 30,
+    speed: 2.5,
+    active: false
+};
+
+let score = 0;
+let gameOver = false;
+let moveDir = 0;
+let lastTime = performance.now();
+
+// 足場オブジェクト生成（着地回数 count と落ちるフラグ broken を追加）
+function createPlatform(x, y) {
+    return {
+        x: x,
+        y: y,
+        count: 0,      // 着地回数
+        broken: false  // 壊れて落下中かどうか
+    };
+}
+
+function initPlatforms() {
+    platforms.length = 0;
+    let currentY = canvas.height - 100;
+    platforms.push(createPlatform(canvas.width / 2 - platformWidth / 2, currentY));
+
+    for (let i = 1; i < platformCount; i++) {
+        const gap = minPlatformGap + Math.random() * (maxPlatformGap - minPlatformGap);
+        currentY -= gap;
+        platforms.push(createPlatform(Math.random() * (canvas.width - platformWidth), currentY));
+    }
+}
+
+function getHighestPlatformY() {
+    let minY = canvas.height;
+    platforms.forEach(p => {
+        if (p.y < minY) minY = p.y;
+    });
+    return minY;
+}
+
+// ダミーパピーを上から出現させる関数
+function spawnDummy() {
+    if (!dummy.active && Math.random() < 0.005) { // 確率で上から降ってくる
+        dummy.x = Math.random() * (canvas.width - dummy.width);
+        dummy.y = -50;
+        dummy.active = true;
+    }
+}
+
+function handleTouch(e) {
+    if (gameOver) return;
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.touches[0];
+    const touchX = touch.clientX - rect.left;
+
+    if (touchX < canvas.width / 2) {
+        moveDir = -1;
+    } else {
+        moveDir = 1;
+    }
+}
+
+canvas.addEventListener('touchstart', handleTouch, { passive: false });
+canvas.addEventListener('touchmove', handleTouch, { passive: false });
+canvas.addEventListener('touchend', () => {
+    moveDir = 0;
+});
+
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') moveDir = -1;
+    if (e.key === 'ArrowRight') moveDir = 1;
+});
+window.addEventListener('keyup', (e) => {
+    if ((e.key === 'ArrowLeft' && moveDir === -1) || (e.key === 'ArrowRight' && moveDir === 1)) {
+        moveDir = 0;
+    }
+});
+
+canvas.addEventListener('click', () => {
+    if (gameOver) {
+        resetGame();
+    }
+});
+
+function resetGame() {
+    player.x = canvas.width / 2 - 15;
+    player.y = canvas.height - 150;
+    player.vx = 0;
+    player.vy = 0;
+    score = 0;
+    moveDir = 0;
+    gameOver = false;
+    dummy.active = false;
+    lastTime = performance.now();
+    initPlatforms();
+    loop(lastTime);
+}
+
+function update(dt) {
+    if (gameOver) return;
+
+    // 左右移動
+    if (moveDir !== 0) {
+        player.vx += moveDir * player.accel * dt;
+        if (player.vx > player.maxVx) player.vx = player.maxVx;
+        if (player.vx < -player.maxVx) player.vx = -player.maxVx;
+    } else {
+        player.vx *= Math.pow(player.friction, dt);
+    }
+
+    player.x += player.vx * dt;
+
+    if (player.x < -player.width) player.x = canvas.width;
+    if (player.x > canvas.width) player.x = -player.width;
+
+    // 重力と縦移動
+    player.vy += player.gravity * dt;
+    player.y += player.vy * dt;
+
+    // 1. 足場との当たり判定（5回着地で壊れる処理）
+    if (player.vy > 0) {
+        platforms.forEach(p => {
+            if (!p.broken &&
+                player.x + player.width > p.x &&
+                player.x < p.x + platformWidth &&
+                player.y + player.height >= p.y &&
+                player.y + player.height <= p.y + platformHeight + Math.max(player.vy * dt, 5)
+            ) {
+                player.vy = player.jumpPower;
+                p.count++; // 乗った回数をカウント
+
+                // 5回乗ったら足場が壊れて落ちる
+                if (p.count >= 5) {
+                    p.broken = true;
+                }
+            }
+        });
+    }
+
+    // 壊れた足場の落下処理
+    platforms.forEach(p => {
+        if (p.broken) {
+            p.y += 8 * dt; // 壊れた足場が高速落下
+        }
+    });
+
+    // 2. ダミーパピーの処理（出現・移動・当たり判定）
+    if (score > 100) { // スコア100を超えたらダミー出現開始
+        spawnDummy();
+    }
+
+    if (dummy.active) {
+        dummy.y += dummy.speed * dt;
+
+        // プレイヤーとダミーパピーの当たり判定
+        const pdx = (player.x + player.width/2) - (dummy.x + dummy.width/2);
+        const pdy = (player.y + player.height/2) - (dummy.y + dummy.height/2);
+        const dist = Math.sqrt(pdx * pdx + pdy * pdy);
+
+        if (dist < (player.width / 2 + dummy.width / 2 - 4)) {
+            gameOver = true; // ぶつかったらゲームオーバー
+        }
+
+        if (dummy.y > canvas.height + 50) {
+            dummy.active = false; // 画面下に消えたらリセット
+        }
+    }
+
+    // 画面上部へのスクロール処理
+    if (player.y < canvas.height / 2) {
+        const diff = canvas.height / 2 - player.y;
+        player.y = canvas.height / 2;
+        score += Math.floor(diff);
+
+        if (dummy.active) dummy.y += diff; // スクロールに合わせてダミーも押し下げる
+
+        platforms.forEach((p, index) => {
+            p.y += diff;
+            
+            // 画面下に消えた（または壊れて落ちた）足場を再配置
+            if (p.y > canvas.height) {
+                const highestY = getHighestPlatformY();
+                const gap = minPlatformGap + Math.random() * (maxPlatformGap - minPlatformGap);
+                
+                platforms[index] = createPlatform(
+                    Math.random() * (canvas.width - platformWidth),
+                    highestY - gap
+                );
+            }
+        });
+    }
+
+    // 落下判定
+    if (player.y > canvas.height) {
+        gameOver = true;
+    }
+}
+
+// 顔を描く共通関数（プレイヤー・ダミー用）
+function drawPapiFace(centerX, centerY, radius, vx, isDummy) {
+    // 体（プレイヤーはピンク、ダミーは灰色がかったピンク）
+    ctx.fillStyle = isDummy ? '#C8648C' : '#FF007F';
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    const eyeOffset = vx * 0.6;
+
+    // 目（縦棒）
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.roundRect(centerX - 7 + eyeOffset, centerY - 8, 3.5, 11, 2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.roundRect(centerX + 3.5 + eyeOffset, centerY - 8, 3.5, 11, 2);
+    ctx.fill();
+
+    // 口（ダミーは真顔、本物はスマイル）
+    ctx.beginPath();
+    if (isDummy) {
+        // ダミーパピーは無表情な横一文字の口
+        ctx.moveTo(centerX - 6, centerY + 4);
+        ctx.lineTo(centerX + 6, centerY + 4);
+    } else {
+        // 本物はにっこり口
+        ctx.arc(centerX + eyeOffset, centerY + 1, 8, Math.PI * 0.15, Math.PI * 0.85);
+    }
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = '#000000';
+    ctx.lineCap = 'round';
+    ctx.stroke();
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 足場の描画（ダメージに応じた色変化）
+    platforms.forEach(p => {
+        if (p.broken) {
+            ctx.fillStyle = '#FF3300'; // 壊れて落下中（赤）
+        } else {
+            // 乗った回数が増えるほど「緑 → 黄 → 赤」に変色
+            const colors = ['#00FF66', '#88FF33', '#CCFF00', '#FFCC00', '#FF6600'];
+            ctx.fillStyle = colors[p.count] || '#00FF66';
+        }
+        ctx.fillRect(p.x, p.y, platformWidth, platformHeight);
+    });
+
+    // プレイヤー描画
+    drawPapiFace(
+        player.x + player.width / 2,
+        player.y + player.height / 2,
+        player.width / 2,
+        player.vx,
+        false
+    );
+
+    // ダミーパピー描画
+    if (dummy.active) {
+        drawPapiFace(
+            dummy.x + dummy.width / 2,
+            dummy.y + dummy.height / 2,
+            dummy.width / 2,
+            0,
+            true
+        );
+    }
+
+    // スコア表示
+    ctx.fillStyle = 'white';
+    ctx.font = '18px sans-serif';
+    ctx.fillText('SCORE: ' + score, 10, 30);
+
+    // 操作説明テキスト
+    if (score < 50 && !gameOver) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('◀ 画面左長押し: 加速 | 画面右長押し: 加速 ▶', canvas.width / 2, canvas.height - 20);
+        ctx.textAlign = 'left';
+    }
+
+    // ゲームオーバー画面
+    if (gameOver) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = 'white';
+        ctx.font = '28px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 20);
+        ctx.font = '16px sans-serif';
+        ctx.fillText('Tap to Restart', canvas.width / 2, canvas.height / 2 + 20);
+        ctx.textAlign = 'left';
+    }
+}
+
+function loop(timestamp) {
+    let delta = (timestamp - lastTime) / 1000;
+    lastTime = timestamp;
+
+    if (delta > 0.1) delta = 0.1;
+    const dt = delta * 60;
+
+    update(dt);
+    draw();
+
+    if (!gameOver) {
+        requestAnimationFrame(loop);
+    }
+}
+
+initPlatforms();
+requestAnimationFrame((timestamp) => {
+    lastTime = timestamp;
+    loop(timestamp);
+});
+</script>
+</body>
+</html>
