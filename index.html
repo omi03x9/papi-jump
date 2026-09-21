@@ -34,6 +34,30 @@
             touch-action: none;
             -webkit-tap-highlight-color: transparent;
         }
+    
+        /* iPhone / mobile full-screen display:
+           Keep the game's internal 360x640 coordinate system,
+           but scale the canvas to fit the available portrait screen. */
+        html, body {
+            width: 100%;
+            height: 100%;
+        }
+
+        canvas {
+            width: min(100vw, calc(100dvh * 360 / 640));
+            height: min(100dvh, calc(100vw * 640 / 360));
+            max-width: 100vw;
+            max-height: 100dvh;
+            object-fit: contain;
+        }
+
+        @media (orientation: landscape) {
+            canvas {
+                height: 100dvh;
+                width: auto;
+            }
+        }
+
     </style>
 </head>
 <body>
