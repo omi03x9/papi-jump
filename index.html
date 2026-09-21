@@ -101,6 +101,30 @@ const dummy = {
     active: false
 };
 
+// スコアに応じて、お邪魔の出現頻度を上げる
+function getDummySpawnChance() {
+    if (score < 100) return 0;
+    // 100点で低確率、以降スコアに応じて徐々に増加（最大0.035/frame）
+    return Math.min(0.005 + (score - 100) / 20000, 0.035);
+}
+
+// 10000点を超えたら板の耐久を5回→3回に変更
+function getPlatformDurability() {
+    return score > 10000 ? 3 : 5;
+}
+
+// ゲームオーバー時のコメント
+function getGameOverComment() {
+    if (score >= 20000) return 'その高さから落ちるな';
+    if (score >= 15000) return '落ち過ぎて滅';
+    if (score >= 10000) return 'ここまで来て落ちるなよ';
+    if (score >= 7000) return '生き恥';
+    if (score >= 4000) return '充電切れるまで練習しろ';
+    if (score >= 2000) return 'まだ伸びしろ';
+    if (score >= 1000) return '修行が足りん';
+    return 'もっと練習しろ';
+}
+
 let score = 0;
 let gameOver = false;
 let moveDir = 0;
@@ -138,7 +162,7 @@ function getHighestPlatformY() {
 
 // ダミーパピーを上から出現させる関数
 function spawnDummy() {
-    if (!dummy.active && Math.random() < 0.005) { // 確率で上から降ってくる
+    if (!dummy.active && Math.random() < getDummySpawnChance()) {
         dummy.x = Math.random() * (canvas.width - dummy.width);
         dummy.y = -50;
         dummy.active = true;
@@ -216,7 +240,7 @@ function update(dt) {
     player.vy += player.gravity * dt;
     player.y += player.vy * dt;
 
-    // 1. 足場との当たり判定（5回着地で壊れる処理）
+    // 1. 足場との当たり判定（通常5回、10000点超で3回着地で壊れる）
     if (player.vy > 0) {
         platforms.forEach(p => {
             if (!p.broken &&
@@ -371,6 +395,12 @@ function draw() {
     ctx.font = '18px sans-serif';
     ctx.fillText('SCORE: ' + score, 10, 30);
 
+    // 10000点以降は板の耐久が3回になることを表示
+    if (score >= 9000) {
+        ctx.font = '12px sans-serif';
+        ctx.fillText('BOARD HP: ' + getPlatformDurability(), 10, 48);
+    }
+
     // 操作説明テキスト
     if (score < 50 && !gameOver) {
         ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
@@ -388,9 +418,13 @@ function draw() {
         ctx.fillStyle = 'white';
         ctx.font = '28px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 20);
+        ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 55);
+        ctx.font = '18px sans-serif';
+        ctx.fillText(getGameOverComment(), canvas.width / 2, canvas.height / 2 - 15);
+        ctx.font = '14px sans-serif';
+        ctx.fillText('SCORE: ' + score, canvas.width / 2, canvas.height / 2 + 18);
         ctx.font = '16px sans-serif';
-        ctx.fillText('Tap to Restart', canvas.width / 2, canvas.height / 2 + 20);
+        ctx.fillText('Tap to Restart', canvas.width / 2, canvas.height / 2 + 55);
         ctx.textAlign = 'left';
     }
 }
